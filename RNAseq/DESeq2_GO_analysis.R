@@ -6,22 +6,54 @@
 
 
 ### Summary
-# This script performs differential expression analysis using the DESeq2 package on RNA-seq count data.
-# It also include simple visualization (volcano plot) and GO enrichment analysis.
+# This R script implements a complete RNA-seq differential expression analysis pipeline 
+# using the DESeq2 package (https://doi.org/10.1186/s13059-014-0550-8), 
+# including data preprocessing, statistical testing, result visualization, and biological interpretation.
+#
+# It begins by importing raw count data and sample metadata, 
+# and constructing a DESeqDataSet object using experimental group annotations. 
+# The pipeline supports optional pre-filtering of low-count genes 
+# to improve computational efficiency and visual clarity.
+# 
+# The script then performs differential expression analysis using DESeq2, 
+# applying log2 fold change shrinkage via the apeglm method 
+# to stabilize estimates for low-count genes while preserving statistical robustness.
+# Significant differentially expressed genes (DEGs) are identified
+# based on user-defined thresholds for adjusted p-value and fold change, 
+# and the results are exported for downstream use.
+#
+# For visualization, the script generates a simple volcano plot 
+# that highlights significantly upregulated and downregulated genes. 
+# It also applies variance-stabilizing transformation (VST) to normalize 
+# gene expression variance across samples, facilitating more reliable visualization and clustering.
+#
+# Finally, Gene Ontology (GO) enrichment analysis is performed on the set of DEGs
+# using the clusterProfiler package (https://doi.org/10.1089/omi.2011.0118), 
+# and the results are visualized via dot plots, enrichment trees, and category network plots 
+# to reveal functional themes and gene-pathway relationships.
+
 
 
 ###=============================================================================
 ### Required packages
 
 library(DESeq2)
+library(apeglm)
 library(dplyr)
 library(ggplot2)
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(enrichplot)
 
 ## DESeq2 package and references
 # https://bioconductor.org/packages/release/bioc/html/DESeq2.html
 # https://github.com/thelovelab/DESeq2
 # https://doi.org/10.1186/s13059-014-0550-8
 
+## clusterProfiler package and references
+# https://bioconductor.org/packages/release/bioc/html/clusterProfiler.html
+# https://github.com/YuLab-SMU/clusterProfiler
+# https://doi.org/10.1089/omi.2011.0118
 
 
 ### ============================================================================
