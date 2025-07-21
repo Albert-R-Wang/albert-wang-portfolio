@@ -1,20 +1,19 @@
 # RNA-seq Analysis
 
-This folder contains code and scripts used for analyzing RNA-seq data during my PhD research at the University of Wisconsin–Madison.
+This folder includes RNA-seq analysis scripts from my PhD work on the Lung-Brain Metastasis (LBM) project, as well as analyses developed after completing my PhD.
 
-The workflows included here were developed and refined across multiple projects involving bulk RNA-seq data, with a focus on data processing, differential expression analysis, visualization, and downstream biological interpretation.
+The workflows included here cover RNA-seq data processing, differential expression analysis, visualization, and downstream biological interpretation.
 
 ## Contents
 
-- Data preprocessing
-- Differential gene expression analysis (DESeq2)
-- Gene set enrichment analysis (GSEA)
-- Functional annotation (GO/KEGG enrichment)
-- Data visualization (heatmaps, volcano plots, PCA, clustering)
-- Integration with external datasets (e.g., TCGA)
+- `DESeq2_GO_analysis.R`: A complete RNA-seq differential expression analysis using the DESeq2 package. This script also generates volcano plots and VST-normalized expression data, and conducts gene ontology (GO) enrichment analysis.
+- `TCGAanalysis_external-gene-list.R`: This R script implements an RNA-seq analysis pipeline using The Cancer Genome Atlas Lung Adenocarcinoma (TCGA-LUAD) dataset, integrating an external lung–brain metastasis (LBM) gene signature to generate annotated heatmaps and perform clustering and survival analysis.
+- `TCGA_DESeq2_analysis.Rmd`: This R Markdown document presents an RNA-seq differential expression analysis pipeline for TCGA-LUAD data using DESeq2. It covers data acquisition via TCGAbiolinks, preprocessing, identification of differentially expressed genes (DEGs), visualization, and biological interpretation.
+  - `TCGA_DESeq2_analysis.pdf`: Example output of the TCGA DESeq2 analysis R Markdown document.
+- `NicheNet_LBM.R`: A tailored NicheNet pipeline for the LBM project, this script identifies and visualizes ligand–target regulatory networks driving intercellular communication between defined sender and receiver cell populations.
 
 ## Notes
 
 - The code is provided as-is for reference and educational purposes.
-- Project-specific data and raw input files are not included due to privacy and data sharing restrictions.
+- Project-specific data and raw input files are not included due to data sharing restrictions.
 - Example scripts and templates are included to demonstrate key analysis steps.
