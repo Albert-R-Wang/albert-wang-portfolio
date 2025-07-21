@@ -6,8 +6,35 @@
 
 
 ### Summary
-# This R pipeline performs a comprehensive analysis of TCGA-LUAD RNA-seq data using TCGAbiolinks and an external LBM gene list. 
-# It includes annotated heatmap generation, clustering, and survival analysis with clinical correlation.
+# This R script implements an RNA-seq analysis pipeline that integrates 
+# an external lung–brain metastasis (LBM) gene signature with
+# transcriptomic and clinical data from The Cancer Genome Atlas 
+# Lung Adenocarcinoma (TCGA-LUAD) dataset.
+#
+# The workflow begins by downloading and preprocessing RNA-seq data from TCGA 
+# using the TCGAbiolinks package (https://doi.org/10.1093/nar/gkv1507). 
+# Formalin-fixed paraffin-embedded (FFPE) and replicate samples are removed, 
+# followed by optional filtering based on clinical data and low gene expression 
+# to retain informative samples and genes. Differentially expressed genes (DEGs) 
+# or genes of interest (e.g. from the LBM project) are then imported 
+# and intersected with the TCGA dataset for downstream analysis. 
+#
+# The script generates annotated heatmaps with flexible customization options, 
+# including log2 fold-change labeling, clustering distance metrics, 
+# and sample annotations (e.g., tissue type or tumor stage). 
+# Gene and sample clusters can be extracted and correlated with clinical variables. 
+# Based on sample groupings, survival analysis is performed 
+# using Kaplan–Meier curves and Cox proportional hazards models. 
+# All results are exported to Excel spreadsheets as documentation.
+#
+# Additionally, the pipeline supports single-gene analysis in TCGA 
+# using various stratification methods, including median, quartile, or custom cutoffs.
+# Users may also export TPM expression data stratified by tissue type and tumor stage.
+#
+# This pipeline enables integrative analysis of TCGA RNA-seq data and 
+# metastasis-related signatures to identify clinically relevant patterns.
+
+
 
 ###=============================================================================
 ### Required packages
