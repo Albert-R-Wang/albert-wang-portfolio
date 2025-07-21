@@ -6,7 +6,10 @@
 
 
 ### Summary
-# This script performs a comprehensive NicheNet analysis tailored for a lung-brain metastasis (LBM) project. 
+# This script performs a comprehensive NicheNet analysis (https://doi.org/10.1038/s41592-019-0667-5) tailored for my lung-brain metastasis (LBM) project.
+# NicheNet is a computational method that predicts how ligands from one cell population influence gene expression in another, helping to uncover cell–cell communication mechanisms. 
+# By integrating prior knowledge of ligand–receptor interactions and intracellular signaling pathways, NicheNet identifies ligands most likely responsible for observed transcriptional changes in target (receiver) cells. 
+# 
 # The analysis begins by loading the NicheNet model (v2.1.5) and pre-processed bulk RNA-seq expression data from the LBM project, and specifies gene sets of interest as target genes for downstream analysis.
 # The pipeline defines sender and receiver cell populations, identifies their expressed genes, and filters potential ligands using the NicheNet model alongside criteria such as expression thresholds, differential expression, and optionally provided custom ligand lists. 
 # Using NicheNet’s model, the script prioritizes ligands based on their ability to predict target gene expression, infers ligand–receptor and ligand–target regulatory networks, and visualizes these relationships via heatmaps and Circos plots.
