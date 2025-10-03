@@ -1,7 +1,7 @@
 # ------------------------------------------------------------------------------
 # Title:       Single-Cell RNA-seq Analysis using Seurat (v5)
 # Author:      Albert Wang
-# Last updated:        2025-08-08
+# Last updated:        2025-10-02
 # ------------------------------------------------------------------------------
 
 
@@ -18,8 +18,12 @@
 ### Installation of Seurat package
 # https://satijalab.org/seurat/articles/install_v5
 
-## Seurat package
+## Seurat package (CRAN)
 install.packages('Seurat')
+# From Github
+#remotes::install_github("satijalab/seurat", "seurat5")
+# Developer version
+#remotes::install_github(repo = 'satijalab/seurat', ref = 'develop')
 
 
 ## Optional packages to enhance performance
@@ -44,9 +48,9 @@ if (!requireNamespace("remotes", quietly = TRUE)) {
   install.packages("remotes")
 }
 install.packages('Signac')
-remotes::install_github("satijalab/seurat-data", quiet = TRUE)
-remotes::install_github("satijalab/azimuth", quiet = TRUE)
-remotes::install_github("satijalab/seurat-wrappers", quiet = TRUE)
+remotes::install_github("satijalab/seurat-data")
+remotes::install_github("satijalab/azimuth")
+remotes::install_github("satijalab/seurat-wrappers")
 
 ###=============================================================================
 ### Required packages
@@ -61,9 +65,13 @@ library(presto) # for more efficient differential expression
 library(glmGamPoi) # for more efficient sctransform
 library(BPCells)
 library(tools)
+library(SeuratWrappers) # collection of community-provided methods for Seurat
 
 
-## Optional: enable parallel execution for the `PrepSCTIntegration` functions
+
+### Optional packages ###
+
+### Enable parallel execution for the `PrepSCTIntegration` functions
 library(future) # manages parallel plans
 library(future.apply) # provides parallel versions of base apply functions
 
@@ -78,6 +86,92 @@ library(future.apply) # provides parallel versions of base apply functions
 #   This releases the workers and frees their memory.
 # - Manage plan locally (e.g., define in `apply_seurat_list`) to have better 
 #   control of memory usage
+
+
+### scVIIntegration
+library(reticulate)
+
+# Needs to install Miniconda (conda+Python) or Anaconda (conda+python+packages)
+# Install scvi-tools, R, and reticulate in the conda environment
+# https://docs.scvi-tools.org/en/stable/installation.html
+# https://github.com/satijalab/seurat/issues/7164
+
+## Installation
+# 1) Ensure a clean Miniconda
+install_miniconda(force = TRUE, update = TRUE)
+
+# 2) Tell reticulate exactly where conda is
+miniconda <- miniconda_path()
+options(reticulate.conda_binary = file.path(miniconda, "condabin", "conda.bat"))
+Sys.setenv(RETICULATE_MINICONDA_PATH = miniconda)
+
+# 3) Confirm R now sees conda
+reticulate::conda_binary()   # should print .../r-miniconda/condabin/conda.bat
+
+# 4) Create env + install
+conda_create("r-scvi", python_version = "3.11.13")
+use_condaenv("r-scvi", required = TRUE)
+
+py_install("pip", envname = "r-scvi")
+py_install("torch", envname = "r-scvi", pip = TRUE)     # CPU torch
+py_install("scvi-tools", envname = "r-scvi", pip = TRUE)
+
+py_module_available("scvi")  # should be TRUE
+
+
+## If installation is complete, start here
+# 1) Use the env you created
+use_condaenv("r-scvi", required = TRUE)
+
+# 2) Import scvi and set workers BEFORE training/integration
+scvi <- import("scvi")
+
+workers <- max(1L, min(8L, parallel::detectCores(logical = TRUE) - 1L))
+scvi$settings$dl_num_workers <- as.integer(workers)
+scvi$settings$dl_persistent_workers <- TRUE   # set FALSE if Windows gives issues
+
+# (Optional) sanity check
+scvi$settings$dl_num_workers
+scvi$settings$dl_persistent_workers
+
+
+
+### Tutorial dataset
+library(SeuratData)
+# For tutorial datasets, define the apply_seurat_list() function first
+# before proceeding directly to the normalization section.
+
+## ifnb
+InstallData("ifnb")
+ifnb <- LoadData("ifnb")
+ifnb[["RNA"]] <- split(ifnb[["RNA"]], f = ifnb$stim)
+ifnb
+filtered_seurat <- ifnb
+
+## pbmcsca
+# example dataset for integration 
+# (https://satijalab.org/seurat/articles/seurat5_integration)
+#
+# Install Azimuth:
+# BiocManager::install("BSgenome.Hsapiens.UCSC.hg38")
+# BiocManager::install("TFBSTools")
+# devtools::install_github("satijalab/azimuth", "seurat5")
+library(Azimuth)
+InstallData("pbmcsca")
+pbmcsca <- LoadData("pbmcsca")
+pbmcsca <- subset(pbmcsca, nFeature_RNA > 1000)
+pbmcsca <- RunAzimuth(pbmcsca, reference = "pbmcref")
+# This data contains 9 different batches (stored in Method)
+# To integrate the batches, split them into different layers in the Seurat object
+# (previous versions require to be split into 9 different Seurat objects)
+# After splitting, there are 18 layers (a counts and data layer for each batch)
+# Note that normalization and variable feature identifications is performed for
+# each layer/batch independently.
+# After integrative analysis, the layers can be rejoin (`JoinLayers') and recreates
+# counts and data layers. This is required to perform differential expression.
+pbmcsca[["RNA"]] <- split(pbmcsca[["RNA"]], f = pbmcsca$Method)
+pbmcsca
+filtered_seurat <- pbmcsca
 
 
 ## Seurat package references
@@ -96,6 +190,7 @@ library(future.apply) # provides parallel versions of base apply functions
 # 1. Setup the Seurat Object
 # 2. Cell Filtering Based on QC
 # 3. Data Normalization
+# 4. Dimensional Reduction with Optional Integration
 # (Additional sections to be added)
 
 
@@ -959,7 +1054,7 @@ if (QCplot.style == "gradient"){
 #   length.
 
 
-### Normalize a Seurat Object Using Log or SCTransform Workflow
+### Normalize a Seurat Object Using LogNormalize or SCTransform Workflow
 #'
 #' This function normalizes a single Seurat object using either the traditional
 #' log normalization workflow or the SCTransform workflow. The choice of method
@@ -967,17 +1062,17 @@ if (QCplot.style == "gradient"){
 #' 
 #' @param seurat.object A Seurat object containing raw counts in the RNA assay.
 #' @param norm.method   A character string specifying the normalization method:
-#'                      - "log": The traditional workflow in Seurat, 
+#'                      - "LogNormalize": The traditional workflow in Seurat, 
 #'                               which uses NormalizeData -> FindVariableFeatures 
 #'                               -> ScaleData to rescale counts, identify variable 
 #'                               genes, and standardize expression values.
-#'                      - "sctransform": This workflow uses `SCTransform` function, 
+#'                      - "SCT": This workflow uses `SCTransform` function, 
 #'                                       which replaces the traditional steps by
 #'                                       fitting a regularized negative binomial 
 #'                                       model per gene to perform normalization, 
 #'                                       variance stabilization, and regression 
 #'                                       of technical effects in a single step.
-#'                      Default = "sctransform".
+#'                      Default = "SCT".
 #'
 #' @return A Seurat object with normalized data stored in either:
 #'           - RNA assay (log method)
@@ -988,17 +1083,17 @@ if (QCplot.style == "gradient"){
 #' - Modify parameters, such as `vars.to.regress`, within the function to 
 #'   account for unwanted data-specific variation (e.g., mitochondrial content, 
 #'   cell cycle effects)
-norm.seurat <- function(seurat.object, norm.method = "sctransform"){
+norm.seurat <- function(seurat.object, norm.method = "SCT"){
   
   ## Validate normalization method
-  if (!norm.method %in% c("sctransform", "log")) {
+  if (!norm.method %in% c("SCT", "LogNormalize")) {
     warning("Invalid normalization method; using default 'sctransform'.")
-    norm.method <- "sctransform"
+    norm.method <- "SCT"
   }
   
   
   
-  if (norm.method=="log"){
+  if (norm.method=="LogNormalize"){
     
     ### Traditional normalization method ###
     
@@ -1047,7 +1142,7 @@ norm.seurat <- function(seurat.object, norm.method = "sctransform"){
     all.genes <- rownames(seurat.object)
     seurat.object <- ScaleData(seurat.object, 
                                features = all.genes,
-                               vars.to.regress = "percent.mt"
+                               #vars.to.regress = "percent.mt"
                                )
     
     
@@ -1056,7 +1151,7 @@ norm.seurat <- function(seurat.object, norm.method = "sctransform"){
     # the same number of RNA molecules.
     
     
-  } else if (norm.method=="sctransform"){
+  } else if (norm.method=="SCT"){
     
     ### SCTransform ###
     # https://satijalab.org/seurat/articles/sctransform_vignette
@@ -1107,7 +1202,7 @@ norm.seurat <- function(seurat.object, norm.method = "sctransform"){
 
 
 ### Specify input format: merged object or individual samples
-input.format <- "individual"
+input.format <- "merged"
 # options: "merged" (normalize the combined Seurat object containing all samples)
 #          "individual" (normalize each sample/Seurat object separately)
 
@@ -1130,8 +1225,14 @@ input.format <- "individual"
 # https://satijalab.org/seurat/archive/v4.3/sctransform_v2_vignette
 
 
-### Specify normalization method (option: "log" or "sctransform")
-specify_norm_method = "sctransform"
+### Specify normalization method (option: "LogNormalize" or "SCT")
+specify_norm_method = "SCT"
+
+if (!(specify_norm_method %in% c("LogNormalize", "SCT"))) {
+  stop("Invalid normalization method. Please choose 'LogNormalize' or 'SCT'.")
+}
+
+
 
 ### Apply normalization
 if (input.format=="merged"){
@@ -1187,7 +1288,7 @@ if (input.format=="merged"){
 # - The raw (untransformed) counts remain unchanged in the "counts" layer of the RNA assay.
 
 
-if (specify_norm_method == "log"){
+if (specify_norm_method == "LogNormalize"){
   
   ## Specify gene of interest
   specify_gene <- "GAPDH"
@@ -1206,7 +1307,7 @@ if (specify_norm_method == "log"){
     ggtitle("After normalization") & 
     ylab(paste0(specify_gene, " Expression Level"))
   
-} else if (specify_norm_method == "sctransform"){
+} else if (specify_norm_method == "SCT"){
   
   ## QC plot before SCTransform
   qc_before <- VlnPlot(
@@ -1232,13 +1333,422 @@ qc_before / qc_after
 
 
 
+# Add Cell cycle scoring:
+# https://satijalab.org/seurat/articles/cell_cycle_vignette
+# https://github.com/satijalab/seurat/issues/1679
+# https://github.com/satijalab/seurat/issues/3692
+# https://github.com/hbctraining/Intro-to-scRNAseq/blob/master/lessons/06_SC_SCT_normalization.md
 
-
-
-
-
+# Integration
+# https://satijalab.org/seurat/articles/integration_introduction
+# https://satijalab.org/seurat/articles/seurat5_integration
 
 
 
 ### ============================================================================
-### (Additional sections to be added)
+### 4. Dimensional Reduction with Optional Integration
+
+## Dimensional reduction is the process of projecting this data into a smaller 
+# set of variables that capture the most important patterns of variation. 
+# In Seurat, this typically means running PCA to summarize global variation, 
+# followed by UMAP or t-SNE to visualize cells in two dimensions.
+
+## When working with multiple samples or batches, each dataset may contain both 
+# biological signal and technical variation (e.g., sequencing depth, batch 
+# effects). Integration refers to methods that align or “harmonize” multiple 
+# datasets so that cells with similar expression profiles cluster together 
+# regardless of their origin.
+#
+# Integration is useful when your scientific question requires joint analysis 
+# across samples—for example, comparing disease vs. control, or pooling 
+# patients to identify shared cell types. Without integration, technical 
+# effects can dominate dimensional reduction, leading to clustering by sample 
+# rather than by biology. Integration helps remove these unwanted sources of 
+# variation so that downstream analyses reflect meaningful biological structure.
+#
+# It’s good practice to run dimensional reduction before integration to 
+# understand what each dataset looks like on its own. This helps answer key 
+# questions: Are major cell types separable? Is the clustering reasonable? 
+# Do you see strong batch effects? This diagnostic step helps decide whether 
+# integration is necessary. 
+#
+# Importantly, integration is not always needed. If datasets already overlap 
+# well, integration may not add value and can even risk over-correcting and 
+# removing real biological differences. Conversely, if strong batch effects 
+# are evident, integration can be justified.
+
+
+## SCTransform with v5 integration
+# https://jasonbiology.tokyo/2024/05/06/seurat-v5-sctransform-data-integration/
+# https://github.com/satijalab/seurat/issues/7251
+
+
+### Perform dimensional reduction
+#'
+#' This function performs dimensional reduction on a single Seurat object 
+#' using either a linear or nonlinear workflow. The linear option runs PCA 
+#' to identify major axes of variation, while the nonlinear option performs 
+#' PCA followed by UMAP or t-SNE for visualization. Clustering is applied 
+#' after PCA to identify transcriptionally similar groups of cells. Wrapping 
+#' these steps into a single function keeps the dimensional reduction workflow 
+#' organized and makes it easy to rerun with consistent parameters if 
+#' integration or other downstream analyses require repeating the reduction.
+#' 
+#' @param seurat.object A Seurat object as input.
+#' @param projection.method A character string specifying the dimensional 
+#' reduction workflow:
+#'     - "linear": Perform PCA only (Default)
+#'     - "nonlinear": Perform PCA followed by UMAP or t-SNE
+#'
+#' @param reduction.use A character string specifying the reduction layer 
+#' or integration result to use:
+#'    - "pca": Use PCA without integration (Default)
+#'    - "integrated.cca": Use PCA results from CCA-based integration
+#'    - "integrated.rpca": Use PCA results from RPCA-based integration
+#'    - "harmony": Use Harmony-corrected embeddings
+#'    - "integrated.mnn": Use MNN (mutual nearest neighbor) integration
+#'    - "integrated.scvi": Use scVI latent space
+#' 
+#' @param umap.name A character string specifying the reduction.name in 
+#' `RunUMAP`:
+#'    - "umap": Default setting for RunUMAP.
+#'
+#' @param cluster.name A character string specifying the cluster.name in 
+#' `FindClusters`:
+#'    - "seurat_clusters": Default setting for `FindClusters`. This will be
+#'                         overwritten everytime `FindClusters` is run.
+#' 
+#' @param dims.use Integer vector specifying which principal components to
+#' use for downstream analysis. These PCs are used for neighbor graph
+#' construction, clustering, and UMAP. Typically, the first 20–50 PCs capture
+#' the most meaningful biological variation. Default: 1:30.
+#' 
+#' @param resolution Numeric value that controls the granularity of the
+#' clustering result. Higher values lead to a larger number of smaller
+#' clusters, while lower values result in fewer, broader clusters. For datasets 
+#' with ~3,000 cells, values between 0.4 and 1.2 yield reasonable results. 
+#' Consider increasing this value for larger datasets. Default: 0.8.
+#'
+#' @return A Seurat object with dimensional reduction data including:
+#'    - PCA (linear method)
+#'    - UMAP or t-SNE (nonlinear method)
+#'           
+#' @note 
+#' - This function accepts a single Seurat object as input
+#' - If `reduction.use != "pca"`, that reduction must already exist
+#'   (e.g., created via `IntegrateLayers()`).
+#' - Adjust PCs (`dims.use`), clustering resolution, and UMAP parameters as needed.
+
+DimRed.seurat <- function(seurat.object, 
+                          projection.method = "nonlinear",
+                          reduction.use = "pca",
+                          umap.name = "umap",
+                          cluster.name = "seurat_clusters",
+                          dims.use = 1:30,
+                          resolution = 0.8){
+  
+  ### PCA (linear dimensional reduction) ###
+  if (reduction.use == "pca"){
+    obj <- RunPCA(seurat.object)
+  } else {
+    obj <- seurat.object
+    
+    if (!(reduction.use %in% Reductions(obj))) {
+      stop(sprintf(
+        "Requested reduction '%s' not found. Available reductions: %s. ",
+        reduction.use, paste(Reductions(obj), collapse = ", ")
+      ), call. = FALSE)
+    }
+  }
+  
+  
+  
+  # Visualize PCA
+  #print(DimPlot(obj, label = F))
+  
+  
+  ## Return PCA result if only asking for linear reduction
+  if (projection.method == "linear"){
+    message("Return linear result")
+    return(obj)
+  } else if (projection.method != "nonlinear") {
+    warning("Invalid projection method; defaulting to 'nonlinear'.")
+    projection.method <- "nonlinear"
+  }
+  
+  
+  ### Clustering ###
+  
+  # Seurat applies a graph-based clustering approach that embed cells in a graph structure,
+  # for example a K-nearest neighbor (KNN) graph, with edges drawn between cells 
+  # with similar feature expression patterns, and attempt to partition this graph 
+  # into highly interconnected 'quasi-cliques' or 'communities'
+  
+  # First, construct a KNN graph based on the Euclidean distance in PCA space, 
+  # and refine the edge weights between any two cells based on the shared overlap 
+  # in their local neighborhoods (Jaccard similarity).
+  obj <- FindNeighbors(obj, dims = dims.use, verbose = TRUE, reduction = reduction.use)
+  
+  # Next, apply modularity optimization such as Louvain algorithm (default) or SLM,
+  # to iteratively group cells together, with the goal of optimizing 
+  # the standard modularity function.
+  # The `FindClusters()` function implements this procedure, and contains 
+  # a resolution parameter that sets the 'granularity' of the downstream clustering,
+  # with increased values leading to a greater number of clusters.
+  # Setting this parameter between 0.4-1.2 typically returns good results for around 3K cells.
+  # Optimal resolution often increases for larger datasets
+  obj <- FindClusters(obj, resolution = resolution, verbose = TRUE,
+                      cluster.name = cluster.name)
+  
+  # Look at cluster IDs of the first 5 cells
+  head(Idents(obj), 5)
+  
+  
+  ### Non-linear dimensional reduction (UMAP/tSNE)
+  # To learn the underlying structure in the dataset,
+  # in order to place similar cells together in low-dimensional space
+  
+  # These methods aim to preserve local distances in the dataset 
+  # (i.e. ensuring that cells with very similar gene expression profiles co-localize),
+  # but often do not preserve more global relationships
+  # Note: avoid drawing biological conclusions solely based on visualization techniques
+  
+  # Run UMAP
+  obj <- RunUMAP(obj, dims = dims.use, verbose = TRUE, 
+                 reduction = reduction.use, reduction.name = umap.name)
+  
+  #print(DimPlot(obj, 
+  #        reduction = "umap", 
+  #        label = TRUE,
+  #        group.by = c("stim", "seurat_clusters")
+  #        #group.by = "orig.ident"
+  #        ))
+  
+  message("Return nonlinear result")
+  return(obj)
+  
+}
+
+### Check clustering results before deciding on integration
+obj <- DimRed.seurat(normalized_seurat, projection.method = "nonlinear",
+                     dims.use = 1:30, resolution = 2,
+                     cluster.name = "unintegrated_clusters",
+                     umap.name = "umap.unintegrated")
+
+
+### Examine and visualize PCA results a few different ways
+print(obj[["pca"]], dims = 1:5, nfeatures = 5)
+
+VizDimLoadings(obj, dims = 1:2, reduction = "pca")
+
+DimPlot(obj, label = F, reduction = "pca")
+
+## `DimHeatmap()` allows for easy exploration of the primary sources of heterogeneity,
+# and can be useful when trying to decide which PCs to include for further analyses.
+# Both cells and features are ordered according to their PCA scores.
+DimHeatmap(obj, dims = 1, cells = 500, balanced = TRUE)
+
+DimHeatmap(obj, dims = 1:15, cells = 500, balanced = TRUE)
+
+## `ElbowPlot`: a ranking of priciple components based on 
+# the percentage of variance explained by each one
+ElbowPlot(obj, ndims = 20)
+
+## Things to consider when choosing number of PCs
+# - Rare cell types may be associated with higher PCs, but they are difficult
+#   to distinguish from background noise for a small dataset without prior knowledge.
+# - Encourage to repeat downstream analyses with a different number of PCs (10, 15, etc.)
+# - Advise to err on the higher side when choosing this parameter
+# The results are similar with more PCs used.
+
+
+### Visualize UMAP results
+p1 <- DimPlot(obj, 
+              reduction = "umap.unintegrated", 
+              label = FALSE,
+              #group.by = c("Method", "predicted.celltype.l2", 
+              #             "unintegrated_clusters") # for pbmcsca dataset
+              #group.by = c("stim", "seurat_clusters") # for ifnb dataset
+              group.by = c("unintegrated_clusters")
+              ) + ggtitle("Unintegrated Clusters")
+p1
+
+
+### Perform integrative analysis ###
+
+### Supported integration method methods (v5)
+# - CCAIntegration
+#   - Canonical Correlation Analysis
+#   - Classic Seurat v3/v4 approach (FindIntegrationAnchors + IntegrateData)
+#   - Suitable for smaller dataset
+#
+# - RPCAIntegration
+#   - Reciprocal PCA
+#   - Faster and more scalable than CCA. Best if share many common cell states
+#
+# - HarmonyIntegration
+#   - Uses the Harmony algorithm
+#   - Iteratively adjusts PCs to remove batch effects while preserving biological variation
+#
+# - FastMNNIntegration
+#   - Uses mutual nearest neighbors (MNN) batch-correction algorithm
+#   - Can over-correct if biology differs strongly across batches (i.e. different tissue/lines)
+#
+# - JointPCAIntegration
+#   - Performs PCA on the combined datasets simultaneuosly (instead of finding anchors)
+#   - Very lightweight compared to other methods, good for well-matched datasets
+#   - Weaker batch correction and not suitable for strong batch effect
+#
+# - SCVIIntegration
+#   - scVI (single-cell Variational Inference)
+#   - Uses scvi-tools Python library (so requires reticulate + scvi-tools installed)
+#   - Accounts for both biological variation and batch effects
+#   - Often outperforms traditional methods on large or complex datasets, but slow
+
+## Benchmarking integration methods:
+# https://www.nature.com/articles/s41592-021-01336-8
+
+## Specify integration method (options: CCA, RPCA, Harmony, MNN, scVI)
+# Enter any value other than the listed options to skip integration (i.e., use PCA)
+specify_int_method <- "CCA"
+int_method <- tolower(specify_int_method)
+
+if (int_method %in% c("cca", "rpca", "mnn","harmony", "scvi")){
+  
+  # Map the specified method to its corresponding integration function
+  integration_fun <- list(
+    cca     = CCAIntegration,
+    rpca    = RPCAIntegration,
+    mnn     = FastMNNIntegration,
+    harmony = HarmonyIntegration,
+    scvi    = scVIIntegration
+  )[[int_method]]
+  
+  # Set standardized names for the integrated reduction, clusters, and UMAP
+  integration.use <-  paste0("integrated.", int_method)
+  int.cluster.name <- paste0(int_method, "_clusters")
+  int.umap.name <- paste0("umap.", int_method)
+  if (int_method == "harmony"){
+    # Using the standard naming convention for other methods causes Harmony to issue a warning.
+    # This warning does not affect the results, but setting the reduction name to "harmony" (default)
+    # prevents the message and keeps the output consistent.
+    integration.use = "harmony"
+  }
+  
+  # Run integration
+  if (int_method == "mnn"){
+    # FastMNNIntegration can't take additional arguments
+    # https://github.com/satijalab/seurat/issues/8631
+    
+    obj <- IntegrateLayers(
+      object = obj,
+      method = integration_fun,
+      new.reduction = integration.use,
+      verbose = TRUE)
+    
+  } else if(int_method == "scvi"){
+    # scVI needs to specify conda environment
+    
+    obj <- IntegrateLayers(
+      object = obj,
+      method = integration_fun,
+      #orig.reduction = "pca", 
+      new.reduction = integration.use,
+      #normalization.method = specify_norm_method,
+      conda_env = file.path(miniconda_path(), "envs", "r-scvi"),
+      max_epochs = 400,
+      verbose = TRUE)
+    
+  } else{
+    # For CCA, RPCA, and Harmony
+    
+    obj <- IntegrateLayers(
+      object = obj,
+      method = integration_fun,
+      orig.reduction = "pca", 
+      new.reduction = integration.use,
+      normalization.method = specify_norm_method,
+      verbose = TRUE)
+    
+  }
+  
+  
+  # Run clustering and umap with the new integration
+  obj <- DimRed.seurat(obj, projection.method = "nonlinear",
+                       reduction.use = integration.use,
+                       dims.use = 1:30, resolution = 2,
+                       cluster.name = int.cluster.name,
+                       umap.name = int.umap.name)
+  
+  # Visualize
+  p2 <- DimPlot(obj, 
+                reduction = int.umap.name, 
+                label = FALSE,
+                #group.by = c("Method", "predicted.celltype.l2", int.cluster.name) # for pbmcsca dataset
+                #group.by = c("stim", "seurat_clusters") # for ifnb dataset
+                group.by = c(int.cluster.name)
+                ) + ggtitle(paste(specify_int_method, "Clusters"))
+  
+} else{
+  warning("No valid integration method specified. Proceeding without integration.")
+}
+
+wrap_plots(c(p1, p2), nrow = 2)
+
+
+
+### Save the object for easy reload later
+# Save a checkpoint so previous steps do not need to be rerun
+
+#saveRDS(obj, file = "../output/seurat_tutorial.rds")
+
+
+### Annotate clusters using canonical markers
+
+## Some canonical markers for immune cells
+# CD8 T cell populations (naive, memory, effector): CD8A, GZMK, CCL5, CCR7
+# CD4 T cell populations (naive, memory, IFN-activated): S100A4, CCR7, IL32, ISG15
+# B cell (developmental sub-structure): TCL1A, FCER2
+# NK cells (CD56dim vs. bright clusters): XCL1 and FCGR3A
+
+## Visualize canonical marker genes as violin plots.
+VlnPlot(obj, features = c("CD8A", "GZMK", "CCL5", "S100A4", "ANXA1", "CCR7", "ISG15", "CD3D"),
+        pt.size = 0.2, ncol = 4, group.by = "unintegrated_clusters")
+
+VlnPlot(obj, features = c("CD8A", "GZMK", "CCL5", "S100A4", "ANXA1", "CCR7", "ISG15", "CD3D"),
+        pt.size = 0.2, ncol = 4, group.by = int.cluster.name)
+
+# Compare specific gene
+p3 <- VlnPlot(obj, features = "CD8A", group.by = "unintegrated_clusters") + 
+  NoLegend() + ggtitle("Unintegrated Clusters")
+
+p4 <- VlnPlot(obj, features = "S100A4", group.by = int.cluster.name) + 
+  NoLegend() + ggtitle(paste(specify_int_method, "Clusters"))
+
+p3 | p4
+
+p2 | p4
+
+## Visualize canonical marker genes on the sctransform embedding.
+p5 <- FeaturePlot(obj, features = c("CD8A", "GZMK", "CCL5", "S100A4", "ANXA1", "CCR7"), 
+                  pt.size = 0.2, ncol = 3, reduction = "umap.unintegrated")
+
+p6 <- FeaturePlot(obj, features = c("CD8A", "GZMK", "CCL5", "S100A4", "ANXA1", "CCR7"), 
+                  pt.size = 0.2, ncol = 3, reduction = int.umap.name)
+
+p2 | p6
+
+
+### Rejoin the layers after integrative analysis is complete
+# This collapses the individual datasets together and recreates the original
+# `counts` and `data` layers.
+# This is required before performing any differential expression analysis
+obj <- JoinLayers(obj)
+obj
+
+
+
+### ============================================================================
+### 5. Differentially Expression Analysis
+
+## Additional sections to be added
