@@ -1,8 +1,8 @@
 # RNA-seq Analysis
 
-This folder includes RNA-seq analysis scripts from my PhD work on the Lung-Brain Metastasis (LBM) project, as well as analyses developed after completing my PhD.
+This folder contains RNA-seq analysis workflows and scripts developed across multiple research projects in cancer biology and computational genomics.
 
-The workflows included here cover RNA-seq data processing, differential expression analysis, visualization, and downstream biological interpretation.
+The workflows included here cover RNA-seq data processing, differential expression analysis, visualization, and downstream biological interpretation across bulk and single-cell datasets.
 
 ## Contents
 
