@@ -1,21 +1,23 @@
 # Code Portfolio
 
-This repository is a curated collection of code and projects I developed during and after my PhD at the University of Wisconsin–Madison.
+This repository is a curated collection of code and projects developed during my PhD at the University of Wisconsin–Madison and my current postdoctoral work at Stanford University.
 
-It includes learning exercises, side projects, and research scripts spanning multiple projects. This repository serves as a portfolio of my coding experience and ongoing exploration of data science and analytical methods in cancer research. It is actively maintained and regularly updated to reflect ongoing work.
+It includes personal projects and research scripts spanning diverse work in cancer biology and computational analysis. 
 
-**Note: Some scripts developed during my PhD are still being finalized and will be added over time.**
+The repository serves as a portfolio of my programming experience and ongoing work in bioinformatics, data analysis, and reproducible research workflows. It is actively maintained and periodically updated to reflect stable and reusable components of my work.
 
-## Contents
+## Areas of Work
 
-The repository includes scripts, notebooks, and supporting materials used for:
+The repository includes scripts, notebooks, and supporting materials related to:
 
-- Data/image analysis, quantification, and visualization
-- RNA-seq data processing and analysis
-- Workflow automation
+- Data and image analysis, quantification, and visualization
+- RNA-seq data processing and transcriptomic analysis
+- Workflow automation and pipeline development
 - Figure generation for publications
-- Side projects and exploratory code
+- Side projects and exploratory computational work
 
 ## Notes
-- The code is provided as-is to showcase my programming experience.
+
+- The code is provided as-is to showcase my programming and research computing experience.
+- Lab-specific scripts and active development code are maintained in separate private repositories.
 - Certain project-specific data and proprietary materials have been excluded due to privacy and data-sharing restrictions.
